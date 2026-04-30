@@ -1,0 +1,151 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // ----------------------------------------------------
+    // GLOBAL HELPERS
+    // ----------------------------------------------------
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    
+    // Admin check - either specific email or marked as admin in DB
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'plotbbsr9@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+    
+    // ----------------------------------------------------
+    // ENTITY VALIDATORS
+    // ----------------------------------------------------
+    
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt'])
+        && data.email is string && data.email.size() <= 100
+        && (data.get('displayName', '') is string && data.get('displayName', '').size() <= 100)
+        && data.role is string && (data.role == 'user' || data.role == 'admin')
+        && data.createdAt is number;
+    }
+    
+    function isValidProperty(data) {
+      return data.keys().hasAll(['title', 'description', 'price', 'location', 'type', 'images', 'status', 'ownerId', 'createdAt', 'updatedAt'])
+        && data.title is string && data.title.size() <= 200
+        && data.description is string && data.description.size() <= 5000
+        && data.price is number && data.price >= 0
+        && data.location is string && data.location.size() <= 200
+        && data.type is string && (data.type == 'apartment' || data.type == 'villa' || data.type == 'plot' || data.type == 'commercial')
+        && (data.get('bedrooms', 0) is number)
+        && (data.get('bathrooms', 0) is number)
+        && (data.get('areaSqft', 0) is number)
+        && data.images is list && data.images.size() <= 20 && (data.images.size() == 0 || data.images[0] is string)
+        && data.status is string && (data.status == 'available' || data.status == 'sold' || data.status == 'rented')
+        && (data.get('featured', false) is bool)
+        && (data.get('amenities', []) is list) && data.get('amenities', []).size() <= 20
+        && (data.get('youtubeUrl', '') is string && data.get('youtubeUrl', '').size() <= 200)
+        && data.ownerId is string && data.ownerId == request.auth.uid
+        && data.createdAt is number
+        && data.updatedAt is number;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['name', 'email', 'message', 'createdAt'])
+        && data.name is string && data.name.size() <= 100
+        && data.email is string && data.email.size() <= 100
+        && data.message is string && data.message.size() <= 2000
+        && (data.get('phone', '') is string && data.get('phone', '').size() <= 30)
+        && (data.get('propertyId', '') is string && data.get('propertyId', '').size() <= 128)
+        && (data.get('senderId', '') is string && data.get('senderId', '').size() <= 128)
+        && (data.get('status', 'new') is string && (data.get('status', 'new') == 'new' || data.get('status', 'new') == 'contacted' || data.get('status', 'new') == 'converted'))
+        && (data.get('notes', '') is string && data.get('notes', '').size() <= 5000)
+        && data.createdAt is number;
+    }
+
+    function isValidFavorite(data) {
+      return data.keys().hasAll(['propertyId', 'createdAt'])
+        && data.propertyId is string && data.propertyId.size() <= 128
+        && data.createdAt is number;
+    }
+
+    // ----------------------------------------------------
+    // COLLECTIONS
+    // ----------------------------------------------------
+    
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      
+      allow create: if isSignedIn() 
+        && isValidId(userId) 
+        && userId == request.auth.uid
+        && isValidUser(incoming())
+        && incoming().role == 'user' // Users cannot make themselves admin
+        && incoming().email == request.auth.token.email;
+        
+      allow update: if (
+        isSignedIn() && isValidId(userId) && userId == request.auth.uid 
+        && isValidUser(incoming())
+        && (
+          isAdmin() || 
+          (
+            incoming().role == existing().role
+            && incoming().email == existing().email
+            && incoming().createdAt == existing().createdAt
+          )
+        )
+      );
+      
+      // Subcollection: favorites
+      match /favorites/{favoriteId} {
+        allow read: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+        
+        allow create: if isSignedIn() 
+          && isValidId(userId) && request.auth.uid == userId
+          && isValidId(favoriteId)
+          && isValidFavorite(incoming())
+          && exists(/databases/$(database)/documents/properties/$(incoming().propertyId));
+          
+        allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId && isValidId(favoriteId);
+      }
+    }
+    
+    match /properties/{propertyId} {
+      allow read: if resource.data.status == 'available';
+      allow read: if isAdmin();
+      
+      allow create: if isAdmin() 
+        && isValidId(propertyId)
+        && isValidProperty(incoming());
+        
+      allow update: if isAdmin() 
+        && isValidId(propertyId)
+        && isValidProperty(incoming())
+        && incoming().createdAt == existing().createdAt;
+        
+      allow delete: if isAdmin() && isValidId(propertyId);
+    }
+    
+    match /messages/{messageId} {
+      // Only admins can read messages
+      allow read: if isAdmin();
+      
+      allow create: if isValidId(messageId)
+        && isValidMessage(incoming());
+
+      allow update: if isAdmin() 
+        && isValidId(messageId)
+        && isValidMessage(incoming())
+        && incoming().createdAt == existing().createdAt;
+        
+      allow delete: if isAdmin() && isValidId(messageId);
+    }
+    
+  }
+}

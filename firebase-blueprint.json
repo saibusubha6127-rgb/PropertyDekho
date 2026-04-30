@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile data",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["email", "role", "createdAt"]
+    },
+    "Property": {
+      "title": "Property",
+      "description": "Real estate property listing",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "location": { "type": "string" },
+        "type": { "type": "string", "enum": ["apartment", "villa", "plot", "commercial"] },
+        "bedrooms": { "type": "number" },
+        "bathrooms": { "type": "number" },
+        "areaSqft": { "type": "number" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["available", "sold", "rented"] },
+        "featured": { "type": "boolean" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["title", "description", "price", "location", "type", "images", "status", "ownerId", "createdAt", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Contact form message",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "message": { "type": "string" },
+        "propertyId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["name", "email", "message", "createdAt"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "User's favorite properties",
+      "type": "object",
+      "properties": {
+        "propertyId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["propertyId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles including their role"
+    },
+    "properties/{propertyId}": {
+      "schema": { "$ref": "#/entities/Property" },
+      "description": "Stores all real estate property listings"
+    },
+    "messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Stores contact messages from users"
+    },
+    "users/{userId}/favorites/{favoriteId}": {
+      "schema": { "$ref": "#/entities/Favorite" },
+      "description": "Stores user's favorite properties as a subcollection"
+    }
+  }
+}
